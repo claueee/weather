@@ -1021,21 +1021,43 @@
       setLoading(true);
       $("place").textContent = "Finding your location…";
 
+      let settled = false;
+
+      const fallbackToSearch = (message) => {
+        if (settled) return;
+        settled = true;
+        setLoading(false);
+        $("place").textContent = "Choose a location";
+        setStatus(message);
+        searchForm.classList.add("open");
+        cityInput.focus();
+      };
+
+      // Browsers only start counting the PositionOptions timeout once the
+      // permission prompt has been answered, so if it's never shown or never
+      // answered (embedded views, blocked prompts, etc.) getCurrentPosition
+      // can hang forever. This timer guarantees we still fall back.
+      const stuckTimer = setTimeout(() => {
+        fallbackToSearch(
+          "Location is taking too long to respond. Allow location access, or search for a city below."
+        );
+      }, 12000);
+
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(stuckTimer);
           const { latitude, longitude } = position.coords;
           fetchWeather(latitude, longitude, "Current location");
         },
         (error) => {
           console.warn(error);
-          setLoading(false);
-          $("place").textContent = "Choose a location";
-          setStatus(
+          clearTimeout(stuckTimer);
+          fallbackToSearch(
             "I couldn't access your location. Allow location access, or search for a city below. " +
             "Location usually requires the page to be opened from a secure HTTPS website."
           );
-          searchForm.classList.add("open");
-          cityInput.focus();
         },
         {
           enableHighAccuracy: false,
