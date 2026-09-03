@@ -814,6 +814,20 @@
       return Number.isFinite(value) ? Math.round(value) : "--";
     }
 
+    // Plain fetch() can hang indefinitely on a filtered or dropped
+    // connection (no response, no error) instead of failing outright,
+    // which would leave the loading overlay stuck forever. Bound every
+    // request so the UI always recovers.
+    async function fetchWithTimeout(url, timeoutMs = 15000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     function compass(degrees) {
       if (!Number.isFinite(degrees)) return "Wind direction";
       const points = ["N","NE","E","SE","S","SW","W","NW"];
@@ -913,14 +927,17 @@
       url.searchParams.set("forecast_days", "7");
 
       try {
-        const response = await fetch(url);
+        const response = await fetchWithTimeout(url);
         if (!response.ok) throw new Error("Weather service returned " + response.status);
 
         const data = await response.json();
         renderWeather(data, label);
       } catch (error) {
         console.error(error);
-        setStatus("Couldn't load the forecast. Check your internet connection and try again.");
+        const message = error.name === "AbortError"
+          ? "The weather service is taking too long to respond. Check your internet connection and try again."
+          : "Couldn't load the forecast. Check your internet connection and try again.";
+        setStatus(message);
       } finally {
         setLoading(false);
       }
@@ -1081,7 +1098,7 @@
         url.searchParams.set("language", navigator.language?.split("-")[0] || "en");
         url.searchParams.set("format", "json");
 
-        const response = await fetch(url);
+        const response = await fetchWithTimeout(url);
         if (!response.ok) throw new Error("Location search failed");
 
         const data = await response.json();
@@ -1102,7 +1119,10 @@
         cityInput.blur();
       } catch (error) {
         console.error(error);
-        setStatus("Couldn't search for that location. Please try again.");
+        const message = error.name === "AbortError"
+          ? "The location search is taking too long to respond. Check your internet connection and try again."
+          : "Couldn't search for that location. Please try again.";
+        setStatus(message);
       } finally {
         setLoading(false);
       }
